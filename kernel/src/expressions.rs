@@ -94,7 +94,6 @@ impl Display for Expression {
     }
 }
 
-
 impl Expression {
     /// Returns a set of columns referenced by this expression.
     pub fn references(&self) -> HashSet<&str> {
