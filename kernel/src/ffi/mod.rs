@@ -244,6 +244,7 @@ impl<T> Default for ReferenceSet<T> {
 
 #[derive(Default)]
 pub struct KernelExpressionVisitorState {
+    // TODO: ReferenceSet<Box<dyn MetadataFilterFn>> instead?
     inflight_expressions: ReferenceSet<Expression>,
 }
 impl KernelExpressionVisitorState {
