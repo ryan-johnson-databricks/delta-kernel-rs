@@ -343,12 +343,30 @@ pub extern "C" fn visit_expression_lt(
 }
 
 #[no_mangle]
+pub extern "C" fn visit_expression_le(
+    state: &mut KernelExpressionVisitorState,
+    a: usize,
+    b: usize,
+) -> usize {
+    visit_expression_binary(state, BinaryOperator::LessThanOrEqual, a, b)
+}
+
+#[no_mangle]
 pub extern "C" fn visit_expression_gt(
     state: &mut KernelExpressionVisitorState,
     a: usize,
     b: usize,
 ) -> usize {
     visit_expression_binary(state, BinaryOperator::GreaterThan, a, b)
+}
+
+#[no_mangle]
+pub extern "C" fn visit_expression_ge(
+    state: &mut KernelExpressionVisitorState,
+    a: usize,
+    b: usize,
+) -> usize {
+    visit_expression_binary(state, BinaryOperator::GreaterThanOrEqual, a, b)
 }
 
 #[no_mangle]
