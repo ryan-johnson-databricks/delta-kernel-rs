@@ -142,13 +142,13 @@ pub unsafe extern "C" fn get_default_client(path: *const c_char) -> *const Kerne
 
 /// Get the latest snapshot from the specified table
 #[no_mangle]
-pub unsafe extern "C" fn snapshot(path: *const c_char, table_client: &KernelDefaultTableClient) -> *mut DefaultSnapshot {
+pub unsafe extern "C" fn snapshot(path: *const c_char, table_client: &KernelDefaultTableClient) -> *const DefaultSnapshot {
     let path = unsafe { unwrap_and_parse_path_as_url(path) };
     let Some(url) = path else {
         return std::ptr::null_mut();
     };
     let snapshot = Snapshot::try_new(url, table_client, None).unwrap();
-    Arc::into_raw(Arc::new(snapshot))
+    Arc::into_raw(snapshot)
 }
 
 /// Get the version of the specified snapshot
@@ -431,7 +431,7 @@ pub unsafe extern "C" fn get_scan_files(
 ) -> FileList {
     let snapshot: Arc<DefaultSnapshot> = unsafe { Arc::from_raw(snapshot) };
     let table_client = unsafe { Arc::from_raw(table_client) };
-    let mut scan_builder = ScanBuilder::try_new(snapshot, table_client).unwrap();
+    let mut scan_builder = ScanBuilder::new(snapshot);
     if let Some(predicate) = predicate {
         // TODO: There is a lot of redundancy between the various visit_expression_XXX methods here,
         // vs. ProvidesMetadataFilter trait and the class hierarchy that supports it. Can we justify
@@ -446,7 +446,7 @@ pub unsafe extern "C" fn get_scan_files(
             scan_builder = scan_builder.with_predicate(*predicate);
         }
     }
-    let scan_adds = scan_builder.build().files().unwrap();
+    let scan_adds = scan_builder.build(table_client.as_ref()).unwrap().files(table_client.as_ref()).unwrap();
     let mut file_count = 0;
     let mut files: Vec<*mut i8> = scan_adds
         .into_iter()

@@ -107,16 +107,16 @@ impl TestCaseInfo {
         &self,
         table_client: Arc<dyn TableClient<JsonReadContext = JRC, ParquetReadContext = PRC>>,
     ) -> TestResult<()> {
-        let table = Table::new(self.table_root()?, table_client);
+        let table = Table::new(self.table_root()?);
 
         let (latest, versions) = self.versions().await?;
 
-        let snapshot = table.snapshot(None)?;
-        self.assert_snapshot_meta(&latest, &snapshot, table.table_client().as_ref())?;
+        let snapshot = table.snapshot(table_client.as_ref(), None)?;
+        self.assert_snapshot_meta(&latest, &snapshot, table_client.as_ref())?;
 
         for table_version in versions {
-            let snapshot = table.snapshot(Some(table_version.version))?;
-            self.assert_snapshot_meta(&table_version, &snapshot, table.table_client().as_ref())?;
+            let snapshot = table.snapshot(table_client.as_ref(), Some(table_version.version))?;
+            self.assert_snapshot_meta(&table_version, &snapshot, table_client.as_ref())?;
         }
 
         Ok(())

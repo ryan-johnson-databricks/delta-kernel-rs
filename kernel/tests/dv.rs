@@ -18,11 +18,11 @@ fn dv_table() -> Result<(), Box<dyn std::error::Error>> {
         Arc::new(TokioBackgroundExecutor::new()),
     )?);
 
-    let table = Table::new(url, table_client);
-    let snapshot = table.snapshot(None)?;
-    let scan = ScanBuilder::try_new(snapshot)?.build();
+    let table = Table::new(url);
+    let snapshot = table.snapshot(table_client.as_ref(), None)?;
+    let scan = ScanBuilder::new(snapshot).build(table_client.as_ref())?;
 
-    let stream = scan.execute()?;
+    let stream = scan.execute(table_client.as_ref())?;
     for batch in stream {
         let rows = batch.num_rows();
         arrow::util::pretty::print_batches(&[batch])?;
@@ -41,11 +41,11 @@ fn non_dv_table() -> Result<(), Box<dyn std::error::Error>> {
         Arc::new(TokioBackgroundExecutor::new()),
     )?);
 
-    let table = Table::new(url, table_client);
-    let snapshot = table.snapshot(None)?;
-    let scan = ScanBuilder::try_new(snapshot)?.build();
+    let table = Table::new(url);
+    let snapshot = table.snapshot(table_client.as_ref(), None)?;
+    let scan = ScanBuilder::new(snapshot).build(table_client.as_ref())?;
 
-    let stream = scan.execute()?;
+    let stream = scan.execute(table_client.as_ref())?;
     for batch in stream {
         let rows = batch.num_rows();
         arrow::util::pretty::print_batches(&[batch]).unwrap();

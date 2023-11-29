@@ -8,12 +8,11 @@ use crate::{DeltaResult, TableClient, Version};
 /// In-memory representation of a Delta table, which acts as an immutable root entity for reading
 /// the different versions (see [`Snapshot`]) of the table located in storage.
 #[derive(Clone)]
-pub struct Table<JRC: Send, PRC: Send + Sync> {
-    table_client: Arc<dyn TableClient<JsonReadContext = JRC, ParquetReadContext = PRC>>,
+pub struct Table {
     location: Url,
 }
 
-impl<JRC: Send, PRC: Send + Sync> std::fmt::Debug for Table<JRC, PRC> {
+impl std::fmt::Debug for Table {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         f.debug_struct("Table")
             .field("location", &self.location)
@@ -21,15 +20,11 @@ impl<JRC: Send, PRC: Send + Sync> std::fmt::Debug for Table<JRC, PRC> {
     }
 }
 
-impl<JRC: Send, PRC: Send + Sync> Table<JRC, PRC> {
+impl Table {
     /// Create a new Delta table with the given parameters
-    pub fn new(
-        location: Url,
-        table_client: Arc<dyn TableClient<JsonReadContext = JRC, ParquetReadContext = PRC>>,
-    ) -> Self {
+    pub fn new(location: Url) -> Self {
         Self {
             location,
-            table_client,
         }
     }
 
@@ -38,15 +33,15 @@ impl<JRC: Send, PRC: Send + Sync> Table<JRC, PRC> {
         &self.location
     }
 
-    pub fn table_client(&self) -> &Arc<dyn TableClient<JsonReadContext = JRC, ParquetReadContext = PRC>> {
-        &self.table_client
-    }
-
     /// Create a [`Snapshot`] of the table corresponding to `version`.
     ///
     /// If no version is supplied, a snapshot for the latest version will be created.
-    pub fn snapshot(&self, version: Option<Version>) -> DeltaResult<Arc<Snapshot>> {
-        Snapshot::try_new(self.location.clone(), self.table_client.clone(), version)
+    pub fn snapshot<JRC: Send, PRC: Send + Sync>(
+        &self,
+        table_client: &dyn TableClient<JsonReadContext = JRC, ParquetReadContext = PRC>,
+        version: Option<Version>
+    ) -> DeltaResult<Arc<Snapshot>> {
+        Snapshot::try_new(self.location.clone(), table_client, version)
     }
 }
 
@@ -73,8 +68,8 @@ mod tests {
             .unwrap(),
         );
 
-        let table = Table::new(url, table_client);
-        let snapshot = table.snapshot(None).unwrap();
+        let table = Table::new(url);
+        let snapshot = table.snapshot(table_client.as_ref(), None).unwrap();
         assert_eq!(snapshot.version(), 1)
     }
 }

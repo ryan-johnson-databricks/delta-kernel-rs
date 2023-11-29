@@ -434,9 +434,9 @@ mod tests {
         let url = url::Url::from_directory_path(path).unwrap();
 
         let client = default_table_client(&url);
-        let snapshot = Snapshot::try_new(url, client, Some(1)).unwrap();
+        let snapshot = Snapshot::try_new(url, client.as_ref(), Some(1)).unwrap();
 
-        let protocol = snapshot.protocol().unwrap();
+        let protocol = snapshot.protocol(client.as_ref()).unwrap();
         let expected = Protocol {
             min_reader_version: 3,
             min_writer_version: 7,
@@ -447,7 +447,7 @@ mod tests {
 
         let schema_string = r#"{"type":"struct","fields":[{"name":"value","type":"integer","nullable":true,"metadata":{}}]}"#;
         let expected: StructType = serde_json::from_str(schema_string).unwrap();
-        let schema = snapshot.schema().unwrap();
+        let schema = snapshot.schema(client.as_ref()).unwrap();
         assert_eq!(schema, expected);
     }
 
@@ -458,9 +458,9 @@ mod tests {
         let url = url::Url::from_directory_path(path).unwrap();
 
         let client = default_table_client(&url);
-        let snapshot = Snapshot::try_new(url, client, None).unwrap();
+        let snapshot = Snapshot::try_new(url, client.as_ref(), None).unwrap();
 
-        let protocol = snapshot.protocol().unwrap();
+        let protocol = snapshot.protocol(client.as_ref()).unwrap();
         let expected = Protocol {
             min_reader_version: 3,
             min_writer_version: 7,
@@ -471,7 +471,7 @@ mod tests {
 
         let schema_string = r#"{"type":"struct","fields":[{"name":"value","type":"integer","nullable":true,"metadata":{}}]}"#;
         let expected: StructType = serde_json::from_str(schema_string).unwrap();
-        let schema = snapshot.schema().unwrap();
+        let schema = snapshot.schema(client.as_ref()).unwrap();
         assert_eq!(schema, expected);
     }
 
@@ -502,7 +502,7 @@ mod tests {
         .unwrap();
         let location = url::Url::from_directory_path(path).unwrap();
         let table_client = default_table_client(&location);
-        let snapshot = Snapshot::try_new(location, table_client, None).unwrap();
+        let snapshot = Snapshot::try_new(location, table_client.as_ref(), None).unwrap();
 
         assert_eq!(snapshot.log_segment.checkpoint_files.len(), 1);
         assert_eq!(
