@@ -18,14 +18,14 @@ pub mod file_stream;
 
 // TODO projection: something like fn select(self, columns: &[&str])
 /// Builder to scan a snapshot of a table.
-pub struct ScanBuilder<JRC: Send, PRC: Send> {
-    snapshot: Arc<Snapshot<JRC, PRC>>,
+pub struct ScanBuilder {
+    snapshot: Arc<Snapshot>,
     snapshot_schema: SchemaRef,
     schema: Option<SchemaRef>,
     predicate: Option<Expression>,
 }
 
-impl<JRC: Send, PRC: Send> std::fmt::Debug for ScanBuilder<JRC, PRC> {
+impl std::fmt::Debug for ScanBuilder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         f.debug_struct("ScanBuilder")
             .field("schema", &self.schema)
@@ -34,11 +34,11 @@ impl<JRC: Send, PRC: Send> std::fmt::Debug for ScanBuilder<JRC, PRC> {
     }
 }
 
-impl<JRC: Send, PRC: Send + Sync> ScanBuilder<JRC, PRC> {
+impl ScanBuilder {
     /// Create a new [`ScanBuilder`] instance.
     // TODO(issues/75) -- once P&M are no longer lazy, self.schema() call below can no longer fail
     // and we can change this method to new instead of try_new.
-    pub fn try_new(snapshot: Arc<Snapshot<JRC, PRC>>) -> DeltaResult<Self> {
+    pub fn try_new(snapshot: Arc<Snapshot>) -> DeltaResult<Self> {
         let snapshot_schema = Arc::new(snapshot.schema()?);
         Ok(Self {
             snapshot,
@@ -73,7 +73,7 @@ impl<JRC: Send, PRC: Send + Sync> ScanBuilder<JRC, PRC> {
     ///
     /// This is lazy and performs no 'work' at this point. The [`Scan`] type itself can be used
     /// to fetch the files and associated metadata required to perform actual data reads.
-    pub fn build(self) -> Scan<JRC, PRC> {
+    pub fn build(self) -> Scan{
         // if no schema is provided, use snapshot's entire schema (e.g. SELECT *)
         let schema = self.schema.unwrap_or_else(|| self.snapshot_schema.clone());
         Scan {
@@ -84,13 +84,13 @@ impl<JRC: Send, PRC: Send + Sync> ScanBuilder<JRC, PRC> {
     }
 }
 
-pub struct Scan<JRC: Send, PRC: Send + Sync> {
-    snapshot: Arc<Snapshot<JRC, PRC>>,
+pub struct Scan {
+    snapshot: Arc<Snapshot>,
     schema: SchemaRef,
     predicate: Option<Expression>,
 }
 
-impl<JRC: Send, PRC: Send + Sync> std::fmt::Debug for Scan<JRC, PRC> {
+impl std::fmt::Debug for Scan {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         f.debug_struct("Scan")
             .field("schema", &self.schema)
@@ -99,7 +99,7 @@ impl<JRC: Send, PRC: Send + Sync> std::fmt::Debug for Scan<JRC, PRC> {
     }
 }
 
-impl<JRC: Send, PRC: Send + Sync + 'static> Scan<JRC, PRC> {
+impl Scan {
     /// Get a shred reference to the [`Schema`] of the scan.
     ///
     /// [`Schema`]: crate::schema::Schema

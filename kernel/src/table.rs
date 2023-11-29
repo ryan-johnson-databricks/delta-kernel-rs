@@ -38,10 +38,14 @@ impl<JRC: Send, PRC: Send + Sync> Table<JRC, PRC> {
         &self.location
     }
 
+    pub fn table_client(&self) -> &Arc<dyn TableClient<JsonReadContext = JRC, ParquetReadContext = PRC>> {
+        &self.table_client
+    }
+
     /// Create a [`Snapshot`] of the table corresponding to `version`.
     ///
     /// If no version is supplied, a snapshot for the latest version will be created.
-    pub fn snapshot(&self, version: Option<Version>) -> DeltaResult<Arc<Snapshot<JRC, PRC>>> {
+    pub fn snapshot(&self, version: Option<Version>) -> DeltaResult<Arc<Snapshot>> {
         Snapshot::try_new(self.location.clone(), self.table_client.clone(), version)
     }
 }
