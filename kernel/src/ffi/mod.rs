@@ -1,17 +1,128 @@
 /// Contains code the exposes what an engine needs to call from 'c' to interface with kernel
+use arrow_array::RecordBatch;
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int, c_void};
 use url::Url;
 
-use crate::expressions::{scalars::Scalar, BinaryOperator, Expression};
+use crate::{ArrowSchemaRef, DeltaResult, ExpressionEvaluator, ExpressionHandler, TableClient};
+use crate::expressions::{BinaryOperator, Expression, scalars::Scalar};
 use crate::scan::ScanBuilder;
+use crate::schema::Schema;
 
 /*
-Note: Right now the iterator simply returns void*s, but we could rather have a generic type on
-EngineIterator and have more type safety. This would be at the cost of having to have a
-`create_[type]_iterator` function for each type we want to support, as 'extern' functions can't be
-generic, so we can't write: `extern fn create_iterator<T> -> EngineIterator<T>`, and have to rather
-do: `extern fn create_int_iterator -> EngineIterator<i32>`
+ Note: Right now the iterator simply returns void*s, but we could rather have a generic type on
+ EngineIterator and have more type safety. This would be at the cost of having to have a
+ `create_[type]_iterator` function for each type we want to support, as 'extern' functions can't be
+ generic, so we can't write: `extern fn create_iterator<T> -> EngineIterator<T>`, and have to rather
+ do: `extern fn create_int_iterator -> EngineIterator<i32>`
+ */
+
+#[repr(C)]
+pub struct EngineExpressionEvaluator {
+    data: *mut c_void,
+    evaluate_fn: extern fn(data: *mut c_void, batch: *const RecordBatch) -> DeltaResult<RecordBatch>,
+}
+
+#[repr(C)]
+pub struct EngineExpressionHandler {
+    data: *mut c_void,
+    get_evaluator_fn: extern fn(
+        data: *mut c_void,
+        schema: *const Schema,
+        expression: *const Expression) -> *mut EngineExpressionEvaluator,
+    drop_evaluator_fn: extern fn(data: *mut c_void, evaluator: *mut EngineExpressionEvaluator) -> (),
+}
+
+#[repr(C)]
+pub struct EngineFileSystemClient {}
+
+#[repr(C)]
+pub struct EngineJsonHandler {}
+
+#[repr(C)]
+pub struct EngineParquetHandler {}
+
+#[repr(C)]
+pub struct EngineTableClient {
+    data: *mut c_void,
+
+    // These can be used to obtain a reference to the engine's various handlers. Each reference
+    // obtained by a _get must be returned to the engine by a call to the corresponding _put.
+    get_expression_handler_fn: extern fn(data: *mut c_void) -> *mut EngineExpressionHandler,
+    get_file_system_client_fn: extern fn(data: *mut c_void) -> *mut EngineFileSystemClient,
+    get_json_handler_fn: extern fn(data: *mut c_void) -> *mut EngineJsonHandler,
+    get_parquet_handler_fn: extern fn(data: *mut c_void) -> *mut EngineParquetHandler,
+
+    drop_expression_handler_fn: extern fn(data: *mut c_void, ptr: *mut EngineExpressionHandler) -> (),
+    drop_file_system_client_fn: extern fn(data: *mut c_void, ptr: *mut EngineFileSystemClient) -> (),
+    drop_json_handler_fn: extern fn(data: *mut c_void, ptr: *mut EngineJsonHandler) -> (),
+    drop_parquet_handler_fn: extern fn(data: *mut c_void, ptr: *mut EngineParquetHandler) -> (),
+}
+
+struct EngineTraitWrapper<T> {
+    data: *mut c_void,
+    drop_fn: extern fn(data: *mut c_void, ptr: *mut T) -> (),
+    ptr: *mut T,
+}
+
+impl ExpressionEvaluator for EngineTraitWrapper<EngineExpressionEvaluator> {
+    /// Evaluate the expression on given ColumnarBatch data.
+    ///
+    /// Contains one value for each row of the input.
+    /// The data type of the output is same as the type output of the expression this evaluator is using.
+    fn evaluate(&self, batch: &RecordBatch) -> DeltaResult<RecordBatch> {
+        todo!()
+    }
+}
+
+impl ExpressionHandler for EngineTraitWrapper<EngineExpressionHandler> {
+    fn get_evaluator(
+        &self,
+        schema: ArrowSchemaRef,
+        expression: Expression,
+    ) -> Arc<dyn ExpressionEvaluator> {
+        let handler = unsafe { &*self.ptr };
+        let schema = Schema::try_from(schema).unwrap();
+        let wrapper = EngineTraitWrapper {
+            data: self.data,
+            drop_fn: handler.drop_evaluator_fn,
+            ptr: (handler.get_evaluator_fn)(handler.data, &schema, &expression),
+        };
+        Arc::new(wrapper)
+    }
+}
+
+impl<T> Drop for EngineTraitWrapper<T> {
+    fn drop(&mut self) {
+        (self.drop_fn)(self.data, self.ptr)
+    }
+}
+
+impl EngineTableClient {
+    fn get_expression_handler(&self) -> Arc<dyn ExpressionHandler> {
+        let wrapper = EngineTraitWrapper {
+            data: self.data,
+            drop_fn: self.drop_expression_handler_fn,
+            ptr: (self.get_expression_handler_fn)(self.data),
+        };
+        Arc::new(wrapper)
+    }
+}
+
+/*
+impl TableClient for EngineTableClient {
+    fn get_expression_handler(&self) -> Arc<dyn ExpressionHandler> {
+        self.expression_handler(self.data)
+
+    /// Get the connector provided [`FileSystemClient`]
+    fn get_file_system_client(&self) -> Arc<dyn FileSystemClient>;
+
+    /// Get the connector provided [`JsonHandler`].
+    fn get_json_handler(&self) -> Arc<dyn JsonHandler>;
+
+    /// Get the connector provided [`ParquetHandler`].
+    fn get_parquet_handler(&self) -> Arc<dyn ParquetHandler>;
+}
 */
 
 // WARNING: the visitor MUST NOT retain internal references to the c_char names passed to visitor methods
@@ -104,6 +215,11 @@ use std::sync::Arc;
 type DefaultSnapshot = Snapshot;
 type KernelDefaultTableClient = crate::DefaultTableClient<TokioBackgroundExecutor>;
 
+#[no_mangle]
+pub extern "C" fn test_client(table_client: &Box<&dyn TableClient>) -> () {
+    println!("Table client!")
+}
+
 /// # Safety
 ///
 /// Caller is responsible to pass a valid path pointer.
@@ -193,6 +309,7 @@ pub extern "C" fn visit_schema(
         }
     }
 
+    // TODO: Snapshot should eagerly compute P&M so we don't need a table client here.
     let schema: StructType = snapshot.schema(table_client).unwrap();
     visit_struct_fields(visitor, &schema)
 }
