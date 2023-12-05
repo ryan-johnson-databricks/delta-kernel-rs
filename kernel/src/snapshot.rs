@@ -42,26 +42,26 @@ impl LogSegment {
     /// `predicate` is an optional expression to filter the log files with.
     #[cfg_attr(feature = "developer-visibility", visibility::make(pub))]
     #[cfg_attr(not(feature = "developer-visibility"), visibility::make(pub(crate)))]
-    fn replay<JRC: Send, PRC: Send>(
+    pub fn replay(
         &self,
-        table_client: &dyn TableClient<JsonReadContext = JRC, ParquetReadContext = PRC>,
+        table_client: &dyn TableClient,
         read_schema: Arc<ArrowSchema>,
-        predicate: Option<Expression>,
+        _predicate: Option<Expression>,
     ) -> DeltaResult<impl Iterator<Item = DeltaResult<RecordBatch>>> {
         println!("LogSegment::replay with table_client {:p} and {} deltas", table_client, self.commit_files.len());
         let json_client = table_client.get_json_handler();
-        let read_contexts =
-            json_client.contextualize_file_reads(&self.commit_files, predicate.clone())?;
         let commit_stream = json_client.read_json_files(
-            read_contexts.as_slice(),
+            &mut self.commit_files.iter(),
             Arc::new(read_schema.as_ref().try_into()?),
+            None,
         )?;
 
         let parquet_client = table_client.get_parquet_handler();
-        let read_contexts =
-            parquet_client.contextualize_file_reads(&self.checkpoint_files, predicate)?;
-        let checkpoint_stream = parquet_client
-            .read_parquet_files(read_contexts, Arc::new(read_schema.as_ref().try_into()?))?;
+        let checkpoint_stream = parquet_client.read_parquet_files(
+            &mut self.checkpoint_files.iter(),
+            Arc::new(read_schema.as_ref().try_into()?),
+            None
+        )?;
 
         let batches = commit_stream.chain(checkpoint_stream).map(|batch| {
             println!("LogSegment::replay got a batch");
@@ -71,9 +71,9 @@ impl LogSegment {
         Ok(batches)
     }
 
-    fn read_metadata<JRC: Send, PRC: Send>(
+    fn read_metadata(
         &self,
-        table_client: &dyn TableClient<JsonReadContext = JRC, ParquetReadContext = PRC>,
+        table_client: &dyn TableClient,
     ) -> DeltaResult<Option<(Metadata, Protocol)>> {
         println!("LogSegment::read_metadata with table_client {:p}", table_client);
         let read_schema = Arc::new(ArrowSchema {
@@ -144,9 +144,9 @@ impl Snapshot {
     /// - `location`: url pointing at the table root (where `_delta_log` folder is located)
     /// - `table_client`: Implementation of [`TableClient`] apis.
     /// - `version`: target version of the [`Snapshot`]
-    pub fn try_new<JRC: Send, PRC: Send>(
+    pub fn try_new(
         table_root: Url,
-        table_client: &dyn TableClient<JsonReadContext = JRC, ParquetReadContext = PRC>,
+        table_client: &dyn TableClient,
         version: Option<Version>,
     ) -> DeltaResult<Arc<Self>> {
         let fs_client = table_client.get_file_system_client();
@@ -218,9 +218,9 @@ impl Snapshot {
         self.version
     }
 
-    fn get_or_insert_metadata<JRC: Send, PRC: Send>(
+    fn get_or_insert_metadata(
         &self,
-        table_client: &dyn TableClient<JsonReadContext = JRC, ParquetReadContext = PRC>,
+        table_client: &dyn TableClient,
     ) -> DeltaResult<(Metadata, Protocol)> {
         {
             let read_lock = self
@@ -246,25 +246,25 @@ impl Snapshot {
     }
 
     /// Table [`Schema`] at this [`Snapshot`]s version.
-    pub fn schema<JRC: Send, PRC: Send>(
+    pub fn schema(
         &self,
-        table_client: &dyn TableClient<JsonReadContext = JRC, ParquetReadContext = PRC>,
+        table_client: &dyn TableClient,
     ) -> DeltaResult<Schema> {
         self.metadata(table_client)?.schema()
     }
 
     /// Table [`Metadata`] at this [`Snapshot`]s version.
-    pub fn metadata<JRC: Send, PRC: Send>(
+    pub fn metadata(
         &self,
-        table_client: &dyn TableClient<JsonReadContext = JRC, ParquetReadContext = PRC>,
+        table_client: &dyn TableClient,
     ) -> DeltaResult<Metadata> {
         let (metadata, _) = self.get_or_insert_metadata(table_client)?;
         Ok(metadata)
     }
 
-    pub fn protocol<JRC: Send, PRC: Send>(
+    pub fn protocol(
         &self,
-        table_client: &dyn TableClient<JsonReadContext = JRC, ParquetReadContext = PRC>,
+        table_client: &dyn TableClient,
     ) -> DeltaResult<Protocol> {
         let (_, protocol) = self.get_or_insert_metadata(table_client)?;
         Ok(protocol)
@@ -301,8 +301,9 @@ fn read_last_checkpoint(
     log_root: &Url,
 ) -> DeltaResult<Option<CheckpointMetadata>> {
     let file_path = LogPath(log_root).child(LAST_CHECKPOINT_FILE_NAME)?;
+    let files = vec![(file_path, None)];
     match fs_client
-        .read_files(vec![(file_path, None)])
+        .read_files(Box::new(files.into_iter()))
         .and_then(|mut data| data.next().expect("read_files should return one file"))
     {
         Ok(data) => Ok(Some(serde_json::from_slice(&data)?)),

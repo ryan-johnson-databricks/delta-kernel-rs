@@ -224,8 +224,9 @@ impl DeletionVectorDescriptor {
                 println!("offset  --> : {:?}", offset);
                 println!("size_in_bytes  --> : {}", size_in_bytes);
 
+                let files = vec![(path, None)];
                 let dv_data = fs_client
-                    .read_files(vec![(path, None)])?
+                    .read_files(Box::new(files.into_iter()))?
                     .next()
                     .ok_or(Error::MissingData("No deletion Vector data".to_string()))??;
 

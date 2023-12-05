@@ -68,9 +68,9 @@ impl ScanBuilder {
     ///
     /// This is lazy and performs no 'work' at this point. The [`Scan`] type itself can be used
     /// to fetch the files and associated metadata required to perform actual data reads.
-    pub fn build<JRC: Send, PRC: Send + Sync>(
+    pub fn build(
         self,
-        table_client: &dyn TableClient<JsonReadContext = JRC, ParquetReadContext = PRC>,
+        table_client: &dyn TableClient,
     ) -> DeltaResult<Scan> {
         // if no schema is provided, use snapshot's entire schema (e.g. SELECT *)
         let read_schema = match self.schema {
@@ -117,9 +117,9 @@ impl Scan {
     /// which yields record batches of scan files and their associated metadata. Rows of the scan
     /// files batches correspond to data reads, and the DeltaReader is used to materialize the scan
     /// files into actual table data.
-    pub fn files<JRC: Send, PRC: Send + Sync>(
+    pub fn files(
         &self,
-        table_client: &dyn TableClient<JsonReadContext = JRC, ParquetReadContext = PRC>,
+        table_client: &dyn TableClient,
     ) -> DeltaResult<impl Iterator<Item = DeltaResult<Add>>> {
         let action_schema = Arc::new(ArrowSchema {
             fields: Fields::from_iter([ActionType::Add.field(), ActionType::Remove.field()]),
@@ -133,9 +133,9 @@ impl Scan {
         Ok(log_replay_iter(log_iter, &self.read_schema, &self.predicate))
     }
 
-    pub fn execute<JRC: Send, PRC: Send + Sync>(
+    pub fn execute(
         &self,
-        table_client: &dyn TableClient<JsonReadContext = JRC, ParquetReadContext = PRC>,
+        table_client: &dyn TableClient,
     ) -> DeltaResult<Vec<RecordBatch>> {
         let parquet_handler = table_client.get_parquet_handler();
 
@@ -147,9 +147,8 @@ impl Scan {
                     size: add.size as usize,
                     location: self.snapshot.table_root.join(&add.path)?,
                 };
-                let context = parquet_handler.contextualize_file_reads(&[meta], None)?;
                 let batches = parquet_handler
-                    .read_parquet_files(context, self.read_schema.clone())?
+                    .read_parquet_files(&mut [meta].iter(), self.schema().clone(), None)?
                     .collect::<DeltaResult<Vec<_>>>()?;
 
                 if batches.is_empty() {

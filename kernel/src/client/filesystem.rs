@@ -97,7 +97,7 @@ impl<E: TaskExecutor> FileSystemClient for ObjectStoreFileSystemClient<E> {
     /// See [`Self::with_readahead`].
     fn read_files(
         &self,
-        files: Vec<FileSlice>,
+        files: Box<dyn Iterator<Item = FileSlice> + Send>,
     ) -> DeltaResult<Box<dyn Iterator<Item = DeltaResult<Bytes>>>> {
         let store = self.inner.clone();
 
@@ -113,7 +113,7 @@ impl<E: TaskExecutor> FileSystemClient for ObjectStoreFileSystemClient<E> {
                     let store = store.clone();
                     async move {
                         if let Some(rng) = range {
-                            store.get_range(&path, rng).await
+                            store.get_range(&path, rng.clone()).await
                         } else {
                             let result = store.get(&path).await?;
                             result.bytes().await
@@ -176,7 +176,7 @@ mod tests {
         url.set_path(&format!("{}/c", url.path()));
         slices.push((url, Some(Range { start: 4, end: 9 })));
 
-        let data: Vec<Bytes> = client.read_files(slices).unwrap().try_collect().unwrap();
+        let data: Vec<Bytes> = client.read_files(Box::new(slices.into_iter())).unwrap().try_collect().unwrap();
 
         assert_eq!(data.len(), 3);
         assert_eq!(data[0], Bytes::from("kernel"));

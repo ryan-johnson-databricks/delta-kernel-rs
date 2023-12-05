@@ -135,39 +135,8 @@ pub trait FileSystemClient: Send + Sync {
     /// Read data specified by the start and end offset from the file.
     fn read_files(
         &self,
-        files: Vec<FileSlice>,
+        files: Box<dyn Iterator<Item = FileSlice> + Send>,
     ) -> DeltaResult<Box<dyn Iterator<Item = DeltaResult<Bytes>>>>;
-}
-
-/// Provides file handling functionality to Delta Kernel.
-///
-/// Connectors can implement this client to provide Delta Kernel
-/// their own custom implementation of file splitting, additional
-/// predicate pushdown or any other connector-specific capabilities.
-pub trait FileHandler {
-    /// Placeholder interface allowing connectors to attach their own custom implementation.
-    ///
-    /// Connectors can use this to pass additional context about a scan file through
-    /// Delta Kernel and back to the connector for interpretation.
-    type FileReadContext: Send;
-
-    /// Associates a connector specific FileReadContext for each scan file.
-    ///
-    /// Delta Kernel will supply the returned FileReadContexts back to
-    /// the connector when reading the file (for example, in ParquetHandler.readParquetFiles.
-    /// Delta Kernel does not interpret FileReadContext. For example, a connector can attach
-    /// split information in its own implementation of FileReadContext or attach any predicates.
-    ///
-    /// # Parameters
-    ///
-    /// - `files` - iterator of [`FileMeta`]
-    /// - `predicate` - Predicate to prune data. This is optional for the
-    ///   connector to use for further optimization. Filtering by this predicate is not required.
-    fn contextualize_file_reads(
-        &self,
-        files: &[FileMeta],
-        predicate: Option<Expression>,
-    ) -> DeltaResult<Vec<Self::FileReadContext>>;
 }
 
 /// Provides JSON handling functionality to Delta Kernel.
@@ -175,7 +144,7 @@ pub trait FileHandler {
 /// Delta Kernel can use this client to parse JSON strings into Row or read content from JSON files.
 /// Connectors can leverage this interface to provide their best implementation of the JSON parsing
 /// capability to Delta Kernel.
-pub trait JsonHandler: FileHandler {
+pub trait JsonHandler {
     /// Parse the given json strings and return the fields requested by output schema as columns in a [`RecordBatch`].
     fn parse_json(
         &self,
@@ -192,8 +161,9 @@ pub trait JsonHandler: FileHandler {
     /// - `physical_schema` - Select list of columns to read from the JSON file.
     fn read_json_files(
         &self,
-        files: &[Self::FileReadContext],
+        files: &mut dyn ExactSizeIterator<Item = &FileMeta>,
         physical_schema: SchemaRef,
+        predicate: Option<Expression>,
     ) -> DeltaResult<FileDataReadResultIterator>;
 }
 
@@ -201,7 +171,7 @@ pub trait JsonHandler: FileHandler {
 ///
 /// Connectors can leverage this interface to provide their own custom
 /// implementation of Parquet data file functionalities to Delta Kernel.
-pub trait ParquetHandler: FileHandler + Send + Sync {
+pub trait ParquetHandler: Send + Sync {
     /// Read and parse the JSON format file at given locations and return
     /// the data as a RecordBatch with the columns requested by physical schema.
     ///
@@ -211,8 +181,9 @@ pub trait ParquetHandler: FileHandler + Send + Sync {
     /// - `physical_schema` - Select list of columns to read from the JSON file.
     fn read_parquet_files(
         &self,
-        files: Vec<<Self as FileHandler>::FileReadContext>,
+        files: &mut dyn ExactSizeIterator<Item = &FileMeta>,
         physical_schema: SchemaRef,
+        predicate: Option<Expression>,
     ) -> DeltaResult<FileDataReadResultIterator>;
 }
 
@@ -220,12 +191,6 @@ pub trait ParquetHandler: FileHandler + Send + Sync {
 ///
 /// Connectors are expected to pass an implementation of this interface when reading a Delta table.
 pub trait TableClient {
-    /// Read context when operating on json files
-    type JsonReadContext: Send;
-
-    /// Read context when operating on parquet files
-    type ParquetReadContext: Send;
-
     /// Get the connector provided [`ExpressionHandler`].
     fn get_expression_handler(&self) -> Arc<dyn ExpressionHandler>;
 
@@ -233,10 +198,8 @@ pub trait TableClient {
     fn get_file_system_client(&self) -> Arc<dyn FileSystemClient>;
 
     /// Get the connector provided [`JsonHandler`].
-    fn get_json_handler(&self) -> Arc<dyn JsonHandler<FileReadContext = Self::JsonReadContext>>;
+    fn get_json_handler(&self) -> Arc<dyn JsonHandler>;
 
     /// Get the connector provided [`ParquetHandler`].
-    fn get_parquet_handler(
-        &self,
-    ) -> Arc<dyn ParquetHandler<FileReadContext = Self::ParquetReadContext>>;
+    fn get_parquet_handler(&self) -> Arc<dyn ParquetHandler>;
 }

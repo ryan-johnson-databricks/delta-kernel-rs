@@ -78,11 +78,11 @@ impl TestCaseInfo {
         Ok((latest, cases))
     }
 
-    fn assert_snapshot_meta<JRC: Send, PRC: Send + Sync>(
+    fn assert_snapshot_meta(
         &self,
         case: &TableVersionMetaData,
         snapshot: &Snapshot,
-        table_client: &dyn TableClient<JsonReadContext = JRC, ParquetReadContext = PRC>,
+        table_client: &dyn TableClient,
     ) -> TestResult<()> {
         assert_eq!(snapshot.version(), case.version);
 
@@ -103,9 +103,9 @@ impl TestCaseInfo {
         Ok(())
     }
 
-    pub async fn assert_metadata<JRC: Send, PRC: Send + Sync>(
+    pub async fn assert_metadata(
         &self,
-        table_client: Arc<dyn TableClient<JsonReadContext = JRC, ParquetReadContext = PRC>>,
+        table_client: Arc<dyn TableClient>,
     ) -> TestResult<()> {
         let table = Table::new(self.table_root()?);
 
